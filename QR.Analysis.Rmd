@@ -1,0 +1,254 @@
+---
+title: "Quantile Regression Analysis for EUR OncoArray Fine Mapping"
+output: html_notebook
+---
+
+# Script to perform the quantile regression analysis to incorporate annotation in the posterior probability of the fine-mapping results from JAM
+```{r Initialization}
+rm(list = ls())
+require(quantreg)
+outputResults <- T # if "T" then *jpg files are created. If "F" then plots are within R notebook
+ResultsFolder <- "Results.12.07.16"
+system(paste("mkdir", ResultsFolder))
+
+```
+
+```{r Defined Functions}
+Rho <- function(u, tau) u * (tau - (u < 0))
+
+QR.prec <- function(a, b) { ## inverse variance of beta distribution
+    variance <- a * b / (a + b)^2 / (1 + a + b)
+    1 / variance
+}
+
+QR <- function(formula, data, tau, precision, ...) {
+    env <- parent.frame()
+    call <- match.call()
+    call <- call[c(1, match(c("formula", "data", "tau"), names(call)))]
+    mf.call <- call
+    mf.call$tau <- NULL
+    mf.call$na.action <- NA
+    mf.call[match("na.action", names(mf.call))] <- list(NULL)
+    mf.call[[1]] <- quote(stats::model.frame)
+    mat.tmp <- eval(mf.call, env)
+    index <- apply(mat.tmp, 1, function(x) !any(is.na(x)))
+    call[[1]] <- quote(rq)
+    formula.null <- formula
+    formula.null[[3]] <- 1
+    call.null <- call
+    call.null[[match("formula", names(call.null))]] <- formula.null
+    call.null$subset <- index
+    q.reg <- eval(call, env)
+    q.reg.null <- eval(call.null, env)
+    q.mat <- function(i, rq.reg) Rho(rq.reg$residuals[, i], tau[i])
+    rho.mat <- do.call(cbind, lapply(seq_along(tau), q.mat, q.reg))
+    rho.mat.null <- do.call(cbind, lapply(seq_along(tau), q.mat, q.reg.null))
+    N <- nrow(rho.mat)
+    rho.sum <- apply(rho.mat, 2, sum)
+    sigma.hat <- rho.sum / N
+    l.weight <- exp(-(rho.mat-rho.mat.null) / matrix(rep(sigma.hat, each=N), nrow=N))
+    Y.se <- exp(-q.reg$residuals^2*precision[index]/2)
+    weight <- cbind((l.weight * Y.se)^(1/4), 1)
+    Y.new <- apply(cbind(q.reg$fitted.values, Y[index]) * weight, 1, sum) /
+        apply(weight, 1, sum)
+    return (list(Y.new=Y.new, index=index, qr.reg=q.reg))
+}
+
+```
+
+
+```{r Input and Exclude Regions}
+d <- read.table("/Users/davidconti/Google Drive/OncoArray/211116_Final_Finemap_data/Binary_annotations_stats/Finemap_best_tags_Annotated_Binary_filtered_211116.tsv", header=T, sep="\t")
+
+exclude.Regions <- c("onco_merged_chr4_unphased_20378153_21378153", "onco_merged_chr6_unphased_29573776_30573776", "onco_merged_chr6_unphased_30618511_32900939", "onco_merged_chr8_unphased_127333841_129040776")
+exclude.r <- d$Region %in% exclude.Regions
+# note: do not filter on JAM_model_manuscript=="JAM Modelsize 0" (keep these regions)
+d.r <- d[!exclude.r, ]
+write.table(d.r, file=paste(ResultsFolder, "/d.regions.removed.txt",sep=""), sep="\t", quote=F, row.names=F)
+
+```
+
+```{r Full Annotations Model}
+d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+
+X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
+                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
+                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
+                      "GSM816637_LNCaP_DNaseI",
+                      "CADD_RawScore","GERP..",
+                      "SiPhy_Omega","SiPhy_Pi","PhastCons","MirBasev20_Binary",
+                      "PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
+                      "PrEC_ChromHMM_Heterochromatin","PrEC_ChromHMM_Poised_Promoter",
+                      "PrEC_ChromHMM_Promoter","PrEC_ChromHMM_Repressed",
+                      "PrEC_ChromHMM_Transcribed",
+                      "in_Coding_Transcript","in_ncRNA_Transcript",
+                      "TCGA_eQTL_coloc0.9_binary","Mayo_eQTL_minP")])
+Y <- d.r$JAM_PostProb_manuscript
+Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+
+numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
+                                 INDICES=d.r$Region, FUN=sum))
+numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
+
+b <- numSNPsInEachRegionForEachSNP
+a.new <- 2 * (1 + b) * Y
+b.new <- 2 * (1 + b) - a.new
+precision <- QR.prec(a.new, b.new)
+
+lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- round(lower.tau, 3)
+tau <- seq(lower.tau, 0.9995, length.out=5)
+ExpectedCounts <- round(length(Y)*(1-tau),0)
+if(outputResults) {
+  write.table(cbind(tau, ExpectedCounts), file=paste(ResultsFolder, "/ExpectedCounts.txt", sep=""), sep="\t", row.names=F, quote=F)
+}
+res <- QR(Y ~ X, NULL, tau, precision)
+
+if(outputResults) { 
+  r <- summary(res$qr.reg)
+  lapply(r, FUN=function(v) { 
+	  write(v$tau, file=paste(ResultsFolder, "/All.Results.txt", sep=""), append=T)
+	  write.table(v$coef, file=paste(ResultsFolder, "/All.Results.txt", sep=""), append=T, sep="\t")
+  })
+}
+
+QR.PostProb <- rep(NA, length(res$index))
+QR.PostProb[res$index] <- res$Y.new
+Delta.PostProb <- QR.PostProb - Y
+Delta.PostProb <- ifelse(is.na(Delta.PostProb), 0, Delta.PostProb)
+d.r <- data.frame(d.r, QR.PostProb, Delta.PostProb)
+write.table(d.r, file=paste(ResultsFolder, "/JAM.QR.Full.results.txt", sep=""), quote=F, row.names=F, sep="\t")
+
+
+```
+```{r Plot Full Annotation Results}
+if(outputResults) { png(paste(ResultsFolder, "/All.QR.Plot.png", sep="")) }
+plot(res$qr.reg)
+if(outputResults) { dev.off() }
+
+delta <- abs(Y[res$index]-res$Y.new)
+if(outputResults) { png(paste(ResultsFolder, "/All.ComparisonPlot.png", sep="")) }
+plot(Y[res$index], res$Y.new, main="All", xlab="JAM PostProb", ylab="QR PostProb", pch=16, col=ifelse(delta>0.01, 2,1))
+text(0.1,.9, paste("Sum Delta","=", round(sum(delta, na.rm=T),3)))
+text(0.1,.8, paste("Mean Delta","=", round(mean(delta, na.rm=T),3)))
+if(outputResults) { dev.off() }
+```
+```{r Subset Annotations Model}
+d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+
+X <- as.matrix(d.r[,c("PrEC_ChromHMM_Enhancer",  # Zsofia
+	"PrEC_ChromHMM_Promoter",  # Zsofia
+	"PrEC_ChromHMM_Transcribed", # Zsofia
+	"GSM736603_LNCaP_DNaseI", # desccribes several GSM...
+	"SiPhy_Pi", # conservation and highliy correlated with GERP and PhastCons; individual analysis also was interesting
+	"TCGA_eQTL_coloc0.9_binary", # Zsofia and independnet results were interesting
+	"in_Coding_Transcript",
+	"in_ncRNA_Transcript",
+	"Mayo_eQTL_minP")])
+if(!outputResults) { cor(X, use="complete") }
+
+Y <- d.r$JAM_PostProb_manuscript
+Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+
+numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
+                                 INDICES=d.r$Region, FUN=sum))
+numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
+
+b <- numSNPsInEachRegionForEachSNP
+a.new <- 2 * (1 + b) * Y
+b.new <- 2 * (1 + b) - a.new
+precision <- QR.prec(a.new, b.new)
+
+lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- round(lower.tau, 3)
+tau <- seq(lower.tau, 0.9995, length.out=5)
+
+res <- QR(Y ~ X, NULL, tau, precision)
+
+if(outputResults) { 
+  r <- summary(res$qr.reg)
+  lapply(r, FUN=function(v) { 
+	  write(v$tau, file=paste(ResultsFolder, "/Subset.Results.txt", sep=""), append=T)
+	  write.table(v$coef, file=paste(ResultsFolder, "/Subset.Results.txt", sep=""), append=T, sep="\t")
+  })
+}
+
+QR.PostProb <- rep(NA, length(res$index))
+QR.PostProb[res$index] <- res$Y.new
+Delta.PostProb <- QR.PostProb - Y
+Delta.PostProb <- ifelse(is.na(Delta.PostProb), 0, Delta.PostProb)
+d.r <- data.frame(d.r, QR.PostProb, Delta.PostProb)
+write.table(d.r, file=paste(ResultsFolder, "/JAM.QR.Subset.results.txt", sep=""), quote=F, row.names=F, sep="\t")
+
+
+```
+
+```{r Plot Subset Annotation Results}
+if(outputResults) { png(paste(ResultsFolder, "/Subset.QR.Plot.png", sep="")) }
+plot(res$qr.reg)
+if(outputResults) { dev.off() }
+
+delta <- abs(Y[res$index]-res$Y.new)
+if(outputResults) { png(paste(ResultsFolder, "/Subset.ComparisonPlot.png", sep="")) }
+plot(Y[res$index], res$Y.new, main="Subset", xlab="JAM PostProb", ylab="QR PostProb", pch=16, col=ifelse(delta>0.01, 2,1))
+text(0.1,.9, paste("Sum Delta","=", round(sum(delta, na.rm=T),3)))
+text(0.1,.8, paste("Mean Delta","=", round(mean(delta, na.rm=T),3)))
+if(outputResults) { dev.off() }
+```
+
+```{r Single Annotations Model}
+d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+
+X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
+                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
+                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
+                      "GSM816637_LNCaP_DNaseI",
+                      "CADD_RawScore","GERP..",
+                      "SiPhy_Omega","SiPhy_Pi","PhastCons","MirBasev20_Binary",
+                      "PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
+                      "PrEC_ChromHMM_Heterochromatin","PrEC_ChromHMM_Poised_Promoter",
+                      "PrEC_ChromHMM_Promoter","PrEC_ChromHMM_Repressed",
+                      "PrEC_ChromHMM_Transcribed",
+                      "in_Coding_Transcript","in_ncRNA_Transcript",
+                      "TCGA_eQTL_coloc0.9_binary","Mayo_eQTL_minP")])
+Y <- d.r$JAM_PostProb_manuscript
+Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+
+numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
+                                 INDICES=d.r$Region, FUN=sum))
+numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
+
+b <- numSNPsInEachRegionForEachSNP
+a.new <- 2 * (1 + b) * Y
+b.new <- 2 * (1 + b) - a.new
+precision <- QR.prec(a.new, b.new)
+
+lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- round(lower.tau, 3)
+tau <- seq(lower.tau, 0.9995, length.out=5)
+
+for(a.name in names(as.data.frame(X))) {
+	if(!outputResults) { print(a.name) }
+	res <- QR(Y ~ X[,a.name], NULL, tau, precision)
+	if(outputResults) { png(file=paste(ResultsFolder, "/", a.name, ".QR.Plot.png", sep="")) }
+	plot(res$qr.reg)
+	if(outputResults) { dev.off() }
+	if(outputResults) { png(file=paste(ResultsFolder, "/", a.name, ".ComparisonPlot.png", sep="")) }
+	plot(Y[res$index], res$Y.new, main=a.name, xlab="JAM PostProb", ylab="QR PostProb", pch=16, col=ifelse(delta>0.01, 2,1))
+	delta <- abs(Y[res$index]-res$Y.new)
+	text(0.1,.9, paste("Sum Delta","=", round(sum(delta),3)))
+	text(0.1,.8, paste("Mean Delta","=", round(mean(delta),3)))
+	if(outputResults) { dev.off() }
+	if(class(try(r <- summary(res$qr.reg), silent=T)) !="try-error") {
+		p <- unlist(lapply(r, FUN=function(r.s) { r.s$coef[2,4] }))
+		if(outputResults) { png(file=paste(ResultsFolder, "/", a.name, ".QR.Pvalue.Plot.png", sep="")) }
+		plot(tau, -log10(p), pch=16, main=a.name, ylim=c(0,10))
+		abline(h=-log10(0.05), lty=2)
+		if(outputResults) { dev.off() }
+	}	
+}
+
+
+
+```
+
