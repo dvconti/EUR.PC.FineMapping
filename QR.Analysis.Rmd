@@ -61,15 +61,16 @@ QR <- function(formula, data, tau, precision, ...) {
 d <- read.table("/Users/davidconti/Google Drive/OncoArray/211116_Final_Finemap_data/Binary_annotations_stats/Finemap_best_tags_Annotated_Binary_filtered_211116.tsv", header=T, sep="\t")
 
 exclude.Regions <- c("onco_merged_chr4_unphased_20378153_21378153", "onco_merged_chr6_unphased_29573776_30573776", "onco_merged_chr6_unphased_30618511_32900939", "onco_merged_chr8_unphased_127333841_129040776")
-exclude.r <- d$Region %in% exclude.Regions
+#exclude.r <- d$Region %in% exclude.Regions
 # note: do not filter on JAM_model_manuscript=="JAM Modelsize 0" (keep these regions)
-d.r <- d[!exclude.r, ]
-write.table(d.r, file=paste(ResultsFolder, "/d.regions.removed.txt",sep=""), sep="\t", quote=F, row.names=F)
+#d.r <- d[!exclude.r, ]
+d.r <- d  # do not exclude any regions
+write.table(d.r, file=paste(ResultsFolder, "/d.analysis.txt",sep=""), sep="\t", quote=F, row.names=F)
 
 ```
 
 ```{r Full Annotations Model}
-d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
 X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
                       "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
@@ -134,7 +135,7 @@ text(0.1,.8, paste("Mean Delta","=", round(mean(delta, na.rm=T),3)))
 if(outputResults) { dev.off() }
 ```
 ```{r Subset Annotations Model}
-d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
 X <- as.matrix(d.r[,c("PrEC_ChromHMM_Enhancer",  # Zsofia
 	"PrEC_ChromHMM_Promoter",  # Zsofia
@@ -197,7 +198,7 @@ if(outputResults) { dev.off() }
 ```
 
 ```{r Single Annotations Model}
-d.r <- read.table(file=paste(ResultsFolder, "/d.regions.removed.txt", sep=""), sep="\t", header=T)
+d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
 X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
                       "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
