@@ -92,8 +92,10 @@ numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
 numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
 
 b <- numSNPsInEachRegionForEachSNP
-a.new <- 2 * (1 + b) * Y
-b.new <- 2 * (1 + b) - a.new
+#a.new <- 2 * (1 + b) * Y
+#b.new <- 2 * (1 + b) - a.new
+a.new <- 2 * (1 + b) * Y + 1 # this change makes things shrink to 0
+b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
 lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
@@ -156,13 +158,15 @@ numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
 numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
 
 b <- numSNPsInEachRegionForEachSNP
-a.new <- 2 * (1 + b) * Y
-b.new <- 2 * (1 + b) - a.new
+#a.new <- 2 * (1 + b) * Y
+#b.new <- 2 * (1 + b) - a.new
+a.new <- 2 * (1 + b) * Y + 1
+b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
 lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
 lower.tau <- round(lower.tau, 3)
-tau <- seq(lower.tau, 0.9995, length.out=5)
+tau <- seq(lower.tau, 0.9995, length.out=3)
 
 res <- QR(Y ~ X, NULL, tau, precision)
 
@@ -220,8 +224,10 @@ numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
 numSNPsInEachRegionForEachSNP <- rep(numSNPsPerRegion, times=numSNPsPerRegion)
 
 b <- numSNPsInEachRegionForEachSNP
-a.new <- 2 * (1 + b) * Y
-b.new <- 2 * (1 + b) - a.new
+#a.new <- 2 * (1 + b) * Y
+#b.new <- 2 * (1 + b) - a.new
+a.new <- 2 * (1 + b) * Y + 1
+b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
 lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
