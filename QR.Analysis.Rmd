@@ -8,7 +8,8 @@ output: html_notebook
 rm(list = ls())
 require(quantreg)
 outputResults <- T # if "T" then *jpg files are created. If "F" then plots are within R notebook
-ResultsFolder <- "Results.12.07.16"
+ResultsFolder <- "Results.08.10.17"
+inputDataFile <- "/Users/davidconti/Google Drive/Collaborations/ELLIPSE/FineMappingManuscript/OncoArray/Post_review_JAM_rerun_01082017/Best_tags_new_prior_annotations_Binary_QR_regions_010817.tsv"
 system(paste("mkdir", ResultsFolder))
 
 ```
@@ -58,7 +59,7 @@ QR <- function(formula, data, tau, precision, ...) {
 
 
 ```{r Input and Exclude Regions}
-d <- read.table("/Users/davidconti/Google Drive/OncoArray/211116_Final_Finemap_data/Binary_annotations_stats/Finemap_best_tags_Annotated_Binary_filtered_211116.tsv", header=T, sep="\t")
+d <- read.table(inputDataFile, header=T, sep="\t")
 
 exclude.Regions <- c("onco_merged_chr4_unphased_20378153_21378153", "onco_merged_chr6_unphased_29573776_30573776", "onco_merged_chr6_unphased_30618511_32900939", "onco_merged_chr8_unphased_127333841_129040776")
 #exclude.r <- d$Region %in% exclude.Regions
@@ -72,20 +73,40 @@ write.table(d.r, file=paste(ResultsFolder, "/d.analysis.txt",sep=""), sep="\t", 
 ```{r Full Annotations Model}
 d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
-X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
-                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
-                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
-                      "GSM816637_LNCaP_DNaseI",
-                      "CADD_RawScore","GERP..",
-                      "SiPhy_Omega","SiPhy_Pi","PhastCons","MirBasev20_Binary",
-                      "PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
+X <- as.matrix(d.r[,c("PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
                       "PrEC_ChromHMM_Heterochromatin","PrEC_ChromHMM_Poised_Promoter",
                       "PrEC_ChromHMM_Promoter","PrEC_ChromHMM_Repressed",
                       "PrEC_ChromHMM_Transcribed",
-                      "in_Coding_Transcript","in_ncRNA_Transcript",
-                      "TCGA_eQTL_coloc0.9_binary","Mayo_eQTL_minP")])
-Y <- d.r$JAM_PostProb_manuscript
-Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+                      "GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
+                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
+                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
+                      "GSM816637_LNCaP_DNaseI","ARandrogen_GSM1236922",
+                      "AR_GSM1328945","AR_GSM1576447",
+                      "CTCFandrogen_GSM1006887","CTCF_GSM1006874",
+                      "CTCF_GSM1383877","CTCF_GSM947527","CTCF_GSM947528",
+                      "ERG_GSM1193657","ERG_GSM1328978","ERG_GSM927071",
+                      "FOXA1_GSM1068136","FOXA1_GSM1274873","FOXA1_GSM1716762",
+                      "FOXA1_GSM759661","FOXA1_GSM759662",
+                      "GABPA_GSM1193660","GABPA_GSM1424529",
+                      "GATA2_GSM1600544",
+                      "HOXB13_GSM1716763","HOXB13_GSM1716764",
+                      "NKX3.1androgen_GSM699633","NKX3.1_GSM699632","NKX3.1_GSM989640",
+                      "TCGA_eQTL_coloc0.9_binary",
+                      "CADD_RawScore","GERP..",
+                      "SiPhy_Omega","SiPhy_Pi",
+                      "PhastCons",
+                      "MirBasev20_Binary",
+                      "H3K27AC_GSM1249447","H3K27AC_GSM1249448",
+                      "H3K27AC_GSM1383865","H3K27AC_GSM1383871",
+                      "H3K27Me3_GSM1383866","H3K27Me3_GSM1383872",
+                      "H3K27Me3_GSM947525","H3K27Me3_GSM947526",
+                      "H3K4Me3_GSM1383868","H3K4Me3_GSM1383874",
+                      "H3K4Me3_GSM945240","H3K4Me3_GSM947523",
+                      "H3K4Me3_GSM947524","in_Coding_Transcript",
+                      "in_ncRNA_Transcript",
+                      "Protein_altering_variant")])
+Y <- d.r$JAM_n.prior_Consensus_PostProb
+#Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
 
 numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
                                  INDICES=d.r$Region, FUN=sum))
@@ -98,7 +119,7 @@ a.new <- 2 * (1 + b) * Y + 1 # this change makes things shrink to 0
 b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
-lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- 1-sum(ifelse(Y>.01, 1, 0))/length(Y)
 lower.tau <- round(lower.tau, 3)
 tau <- seq(lower.tau, 0.9995, length.out=5)
 ExpectedCounts <- round(length(Y)*(1-tau),0)
@@ -139,19 +160,32 @@ if(outputResults) { dev.off() }
 ```{r Subset Annotations Model}
 d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
-X <- as.matrix(d.r[,c("PrEC_ChromHMM_Enhancer",  # Zsofia
-	"PrEC_ChromHMM_Promoter",  # Zsofia
-	"PrEC_ChromHMM_Transcribed", # Zsofia
-	"GSM736603_LNCaP_DNaseI", # desccribes several GSM...
-	"SiPhy_Pi", # conservation and highliy correlated with GERP and PhastCons; individual analysis also was interesting
-	"TCGA_eQTL_coloc0.9_binary", # Zsofia and independnet results were interesting
-	"in_Coding_Transcript",
-	"in_ncRNA_Transcript",
-	"Mayo_eQTL_minP")])
+X <- as.matrix(d.r[,c("PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
+                      "PrEC_ChromHMM_Heterochromatin","PrEC_ChromHMM_Poised_Promoter",
+                      "PrEC_ChromHMM_Promoter","PrEC_ChromHMM_Repressed",
+                      "PrEC_ChromHMM_Transcribed",
+                      "GSM736565_LNCaP_DNaseI",
+                      "ARandrogen_GSM1236922",
+                      "AR_GSM1328945",
+                      "CTCF_GSM1383877",
+                      "ERG_GSM1193657",
+                      "FOXA1_GSM1068136",
+                      "GABPA_GSM1193660",
+                      "GATA2_GSM1600544",
+                      "HOXB13_GSM1716763",
+                      "NKX3.1_GSM989640",
+                      "TCGA_eQTL_coloc0.9_binary",
+                      "CADD_RawScore","GERP..",
+                      "MirBasev20_Binary",
+                      "H3K27AC_GSM1249447", "H3K27Me3_GSM1383872", "H3K4Me3_GSM945240",
+                      "in_Coding_Transcript",
+                      "in_ncRNA_Transcript",
+                      "Protein_altering_variant")])
 if(!outputResults) { cor(X, use="complete") }
 
-Y <- d.r$JAM_PostProb_manuscript
-Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+Y <- d.r$JAM_n.prior_Consensus_PostProb
+#Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+
 
 numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
                                  INDICES=d.r$Region, FUN=sum))
@@ -164,9 +198,9 @@ a.new <- 2 * (1 + b) * Y + 1
 b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
-lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- 1-sum(ifelse(Y>.01, 1, 0))/length(Y)
 lower.tau <- round(lower.tau, 3)
-tau <- seq(lower.tau, 0.9995, length.out=3)
+tau <- seq(lower.tau, 0.9995, length.out=5)
 
 res <- QR(Y ~ X, NULL, tau, precision)
 
@@ -204,20 +238,40 @@ if(outputResults) { dev.off() }
 ```{r Single Annotations Model}
 d.r <- read.table(file=paste(ResultsFolder, "/d.analysis.txt", sep=""), sep="\t", header=T)
 
-X <- as.matrix(d.r[,c("GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
-                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
-                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
-                      "GSM816637_LNCaP_DNaseI",
-                      "CADD_RawScore","GERP..",
-                      "SiPhy_Omega","SiPhy_Pi","PhastCons","MirBasev20_Binary",
-                      "PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
+X <- as.matrix(d.r[,c("PrEC_ChromHMM_CTCF","PrEC_ChromHMM_Enhancer",
                       "PrEC_ChromHMM_Heterochromatin","PrEC_ChromHMM_Poised_Promoter",
                       "PrEC_ChromHMM_Promoter","PrEC_ChromHMM_Repressed",
                       "PrEC_ChromHMM_Transcribed",
-                      "in_Coding_Transcript","in_ncRNA_Transcript",
-                      "TCGA_eQTL_coloc0.9_binary","Mayo_eQTL_minP")])
-Y <- d.r$JAM_PostProb_manuscript
-Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
+                      "GSM1008595_RWPE1_DNaseI","GSM1024742_PrEC_DNaseI",
+                      "GSM1024743_PrEC_DNaseI","GSM736565_LNCaP_DNaseI",
+                      "GSM736603_LNCaP_DNaseI","GSM816634_LNCaP.androgen_DNaseI",
+                      "GSM816637_LNCaP_DNaseI","ARandrogen_GSM1236922",
+                      "AR_GSM1328945","AR_GSM1576447",
+                      "CTCFandrogen_GSM1006887","CTCF_GSM1006874",
+                      "CTCF_GSM1383877","CTCF_GSM947527","CTCF_GSM947528",
+                      "ERG_GSM1193657","ERG_GSM1328978","ERG_GSM927071",
+                      "FOXA1_GSM1068136","FOXA1_GSM1274873","FOXA1_GSM1716762",
+                      "FOXA1_GSM759661","FOXA1_GSM759662",
+                      "GABPA_GSM1193660","GABPA_GSM1424529",
+                      "GATA2_GSM1600544",
+                      "HOXB13_GSM1716763","HOXB13_GSM1716764",
+                      "NKX3.1androgen_GSM699633","NKX3.1_GSM699632","NKX3.1_GSM989640",
+                      "TCGA_eQTL_coloc0.9_binary",
+                      "CADD_RawScore","GERP..",
+                      "SiPhy_Omega","SiPhy_Pi",
+                      "PhastCons",
+                      "MirBasev20_Binary",
+                      "H3K27AC_GSM1249447","H3K27AC_GSM1249448",
+                      "H3K27AC_GSM1383865","H3K27AC_GSM1383871",
+                      "H3K27Me3_GSM1383866","H3K27Me3_GSM1383872",
+                      "H3K27Me3_GSM947525","H3K27Me3_GSM947526",
+                      "H3K4Me3_GSM1383868","H3K4Me3_GSM1383874",
+                      "H3K4Me3_GSM945240","H3K4Me3_GSM947523",
+                      "H3K4Me3_GSM947524","in_Coding_Transcript",
+                      "in_ncRNA_Transcript",
+                      "Protein_altering_variant")])
+Y <- d.r$JAM_n.prior_Consensus_PostProb
+#Y <- ifelse(is.na(Y), 0, Y)  # NAs are treated as very small or zero post. probabilities
 
 numSNPsPerRegion <- as.vector(by(rep(1, nrow(d.r)),
                                  INDICES=d.r$Region, FUN=sum))
@@ -230,7 +284,7 @@ a.new <- 2 * (1 + b) * Y + 1
 b.new <- 2 * (1 + b) - a.new + 2
 precision <- QR.prec(a.new, b.new)
 
-lower.tau <- 1-sum(ifelse(is.na(d.r$JAM_BF_manuscript), 0, ifelse(d.r$JAM_BF_manuscript>1, 1, 0)), rm.na=T)/length(Y)
+lower.tau <- 1-sum(ifelse(Y>.01, 1, 0))/length(Y)
 lower.tau <- round(lower.tau, 3)
 tau <- seq(lower.tau, 0.9995, length.out=5)
 
